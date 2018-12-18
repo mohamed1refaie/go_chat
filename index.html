@@ -1,0 +1,68 @@
+<html>
+<head>
+    <title>GO Chat</title>
+</head>
+
+<style>
+    #chat {
+        text-align: left;
+        background: #f1f1f1;
+        width: 500px;
+        min-height: 300px;
+        padding: 20px;
+    }
+</style>
+
+<body>
+<center>
+    <h3>Go Chat</h3>
+        <pre id="chat" hidden="true"></pre>
+        <input placeholder="say something" id="text" type="text" hidden="true">
+        <input placeholder="Enter your username" id="username" type="text">
+        <button name="btn" value="Enter" id="btn">Enter</button>
+
+</center>
+
+<script>
+    var url = "ws://" + window.location.host + "/ws";
+    var ws = new WebSocket(url);
+    var name = "Guest" + Math.floor(Math.random() * 1000);
+    var chat = document.getElementById("chat");
+    var text = document.getElementById("text");
+    var username = document.getElementById("username");
+    var btn = document.getElementById("btn");
+    var now = function () {
+        var iso = new Date().toISOString();
+        return iso.split("T")[1].split(".")[0];
+    };
+    ws.onmessage = function (msg) {
+        var line =  now() + " " + msg.data + "\n";
+        chat.innerText += line;
+    };
+    text.onkeydown = function (e) {
+        if (e.keyCode === 13 && text.value !== "") {
+            ws.send("<" + username.value + "> " + text.value);
+            text.value = "";
+        }
+    };
+    username.onkeydown = function (e) {
+        if (e.keyCode === 13 && username.value !== "") {
+            ws.send(username.value);
+            text.hidden=false
+            chat.hidden=false
+            btn.hidden=true
+            username.hidden=true
+        }
+    }
+    btn.onclick = function () {
+        if (username.value !== "") {
+            ws.send(username.value);
+            text.hidden=false
+            chat.hidden=false
+            btn.hidden=true
+            username.hidden=true
+        }
+    }
+</script>
+</body>
+</html>

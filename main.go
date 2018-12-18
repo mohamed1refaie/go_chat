@@ -1,12 +1,15 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"io"
-	"log"
-	"net"
+	"github.com/gorilla/websocket"
+	"net/http"
 )
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
 
 type User struct {
 	Name   string
@@ -52,13 +55,23 @@ func (cs *ChatServer) Run() {
 	}
 }
 
-func handleConn(chatServer *ChatServer, conn net.Conn) {
-	defer conn.Close()
-	io.WriteString(conn, "Enter your username: ")
-	scanner := bufio.NewScanner(conn)
-	scanner.Scan()
+var chatServer = &ChatServer{
+	Users: make(map[string]User),
+	Join:  make(chan User),
+	Leave: make(chan User),
+	Input: make(chan Message),
+}
+
+func handleRequest(w http.ResponseWriter, r *http.Request) {
+	conn, _ := upgrader.Upgrade(w, r, nil) // error ignored for sake of simplicity
+	var username string
+	_, usr, err := conn.ReadMessage()
+	if err != nil {
+		return
+	}
+	username = string(usr)
 	user := User{
-		Name:   scanner.Text(),
+		Name:   string(username),
 		Output: make(chan Message),
 	}
 	chatServer.Join <- user
@@ -66,49 +79,34 @@ func handleConn(chatServer *ChatServer, conn net.Conn) {
 		chatServer.Leave <- user
 	}()
 
-	// Read from conn
 	go func() {
-		for scanner.Scan() {
-			ln := scanner.Text()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
 			chatServer.Input <- Message{
 				Username: user.Name,
-				Text:     ln,
+				Text:     string(msg),
 			}
 		}
 	}()
-
 	for msg := range user.Output {
-		_, err := io.WriteString(conn, msg.Username+": "+msg.Text+"\n")
-		if err != nil {
-			break
+
+		if err := conn.WriteMessage(1, []byte(msg.Text)); err != nil {
+			return
 		}
 	}
 }
 
 func main() {
 
-	listener, err := net.Listen("tcp", "localhost:8080")
-
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer listener.Close()
-
-	chatServer := &ChatServer{
-		Users: make(map[string]User),
-		Join:  make(chan User),
-		Leave: make(chan User),
-		Input: make(chan Message),
-	}
-
 	go chatServer.Run()
+	http.HandleFunc("/ws", handleRequest)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "index.html")
+	})
 
-	for {
-		con, errs := listener.Accept()
-		if errs != nil {
-			log.Fatal(errs)
-		}
+	http.ListenAndServe(":8080", nil)
 
-		go handleConn(chatServer, con)
-	}
 }
