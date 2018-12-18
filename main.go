@@ -6,17 +6,102 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
 )
+
+type User struct {
+	Name   string
+	Output chan Message
+}
+
+type Message struct {
+	Username string
+	Text     string
+}
+
+type ChatServer struct {
+	Users map[string]User
+	Join  chan User
+	Leave chan User
+	Input chan Message
+}
+
+func (cs *ChatServer) Run() {
+	for {
+		select {
+		case user := <-cs.Join:
+			cs.Users[user.Name] = user
+			go func() {
+				cs.Input <- Message{
+					Username: "SYSTEM",
+					Text:     fmt.Sprintf("%s Joined", user.Name),
+				}
+			}()
+		case user := <-cs.Leave:
+			delete(cs.Users, user.Name)
+			go func() {
+				cs.Input <- Message{
+					Username: "SYSTEM",
+					Text:     fmt.Sprintf("%s Left", user.Name),
+				}
+			}()
+		case msg := <-cs.Input:
+			for _, user := range cs.Users {
+				user.Output <- msg
+			}
+		}
+	}
+}
+
+func handleConn(chatServer *ChatServer, conn net.Conn) {
+	defer conn.Close()
+	io.WriteString(conn, "Enter your username: ")
+	scanner := bufio.NewScanner(conn)
+	scanner.Scan()
+	user := User{
+		Name:   scanner.Text(),
+		Output: make(chan Message),
+	}
+	chatServer.Join <- user
+	defer func() {
+		chatServer.Leave <- user
+	}()
+
+	// Read from conn
+	go func() {
+		for scanner.Scan() {
+			ln := scanner.Text()
+			chatServer.Input <- Message{
+				Username: user.Name,
+				Text:     ln,
+			}
+		}
+	}()
+
+	for msg := range user.Output {
+		_, err := io.WriteString(conn, msg.Username+": "+msg.Text+"\n")
+		if err != nil {
+			break
+		}
+	}
+}
 
 func main() {
 
 	listener, err := net.Listen("tcp", "localhost:8080")
-	defer listener.Close()
 
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer listener.Close()
+
+	chatServer := &ChatServer{
+		Users: make(map[string]User),
+		Join:  make(chan User),
+		Leave: make(chan User),
+		Input: make(chan Message),
+	}
+
+	go chatServer.Run()
 
 	for {
 		con, errs := listener.Accept()
@@ -24,18 +109,6 @@ func main() {
 			log.Fatal(errs)
 		}
 
-		fmt.Println("Accepted Connection..")
-		reader := bufio.NewReader(os.Stdin)
-		terminalreader := bufio.NewReader(con)
-
-		for {
-			fmt.Print("You: ")
-			text, _ := reader.ReadString('\n')
-			io.WriteString(con, "Stranger: "+text)
-			io.WriteString(con, "You: ")
-			textx, _ := terminalreader.ReadString('\n')
-			fmt.Print("Stanger: " + textx)
-		}
-		con.Close()
+		go handleConn(chatServer, con)
 	}
 }
