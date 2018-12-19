@@ -6,7 +6,7 @@ This a web chat room server using [net/http](https://golang.org/pkg/net/http/) a
 To Run the Project:
 * clone the repo or download it
 * cd into the directory of the project from the terminal
-* install all Gorilla websocket with `go get github.com/gorilla/websocket`
+* install Gorilla websocket with `go get github.com/gorilla/websocket`
 * start the server with `go main.go`
 
 *The server is now live on localhost:8080, you can open as many tabs as you want*
